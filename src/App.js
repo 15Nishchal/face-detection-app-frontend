@@ -8,7 +8,7 @@ import Rank from './components/Rank/Rank';
 import Signin from './components/Signin/Signin';
 import Register from './components/Register/Register';
 import ParticlesBg from 'particles-bg';
-// import './index.css'
+
 
 const returnClarifaiRequestOptions = (imageURL) => {
   // Your PAT (Personal Access Token) can be found in the portal under Authentification
@@ -48,16 +48,8 @@ const requestOptions = {
 };
 return requestOptions;
 
-
 }
     
-
-//You must add your own API key here from Clarifai.
-// const app = new Clarifai.App({
-//   apiKey: '3d8d042d982d405181d6534cacbe7c5a'
-//  });
- 
-
 const MODEL_ID = 'face-detection';
 class App extends Component {
   constructor(){
@@ -67,46 +59,86 @@ class App extends Component {
       imageURL: '',
       box:{},
       route: '',
-      isSignedIn: false
+      isSignedIn: false,
+      user: {
+        id: '',
+        name: '',
+        email: '',
+        entries: 0,
+        joined: ''
+      }
     }
   }
+ 
+  loadUser = (data) => {
+    this.setState({user: {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      entries: data.entries,
+      joined: data.joined
+    }})
+  }
 
-  calculateFaceLocation = (data) => {
-    const clarifaiFace = data.outputs[0].data.regions[0].region_info.bounding_box;
+
+  onButtonSubmit = () => {
+    this.setState({ imageURL: this.state.input });
+  
+    fetch("https://api.clarifai.com/v2/models/" + MODEL_ID + "/outputs", returnClarifaiRequestOptions(this.state.input))
+      .then(response => response.json())
+      .then(data => {
+        if (data && data.outputs && data.outputs.length > 0) {
+          this.calculateFaceBox(data.outputs[0]); // Calculate and display face box
+          this.updateUserEntries(); // Update user entries
+        } else {
+          console.log('No faces detected.');
+        }
+      })
+      .catch(err => console.log(err));
+  }
+  
+  calculateFaceBox = (outputData) => {
+    const clarifaiFace = outputData.data.regions[0].region_info.bounding_box;
     const image = document.getElementById('inputimage');
     const width = Number(image.width);
     const height = Number(image.height);
-    console.log('face', clarifaiFace);
-    return {
+    const box = {
       leftCol: clarifaiFace.left_col * width,
       topRow: clarifaiFace.top_row * height,
       rightCol: width - (clarifaiFace.right_col * width),
-      bottomRow: height - (clarifaiFace.bottom_row * height),
-    }
-
-  }
-
-  displayFaceBox = (box) => {
-    console.log('box', box);
-    this.setState({box: box});
-    
-  }
-
-  onInputChange = (event) => {
-    this.setState({input:event.target.value});
+      bottomRow: height - (clarifaiFace.bottom_row * height)
+    };
+    this.displayFaceBox(box);
   }
   
- 
-
-  onButtonSubmit = () => {
-    this.setState({imageURL: this.state.input});
-    fetch("https://api.clarifai.com/v2/models/" + MODEL_ID + "/outputs", returnClarifaiRequestOptions(this.state.input))
+  updateUserEntries = () => {
+    fetch('http://localhost:3000/image', {
+      method: 'put',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: this.state.user.id
+      })
+    })
     .then(response => response.json())
-    .then(response => this.displayFaceBox(this.calculateFaceLocation(response)))
+    .then(count => {
+      this.setState(prevState => ({
+        user: {
+          ...prevState.user,
+          entries: count
+        }
+      }));
+    })
     .catch(err => console.log(err));
-    
   }
-
+  
+  displayFaceBox = (box) => {
+    this.setState({ box: box });
+  }
+  
+  onInputChange = (event) => {
+    this.setState({input: event.target.value});
+  }
+  
   onRouteChange = (route) => {
     if(route === 'signout'){
       this.setState({isSignedIn: false});
@@ -125,7 +157,7 @@ class App extends Component {
         { this.state.route === 'home' 
           ? <div>
             <Logo/>
-            <Rank/>
+            <Rank name={this.state.user.name} entries={this.state.user.entries}/>
             <ImageLinkForm 
             onInputChange = {this.onInputChange} 
             onButtonSubmit = {this.onButtonSubmit}
@@ -135,8 +167,8 @@ class App extends Component {
           :
           (
             this.state.route === 'signin' 
-            ? <Signin onRouteChange = {this.onRouteChange}/>
-            :<Register onRouteChange = {this.onRouteChange}/>
+            ? <Signin loadUser={this.loadUser} onRouteChange = {this.onRouteChange}/>
+            :<Register loadUser={this.loadUser} onRouteChange = {this.onRouteChange}/>
           )
           
         }
